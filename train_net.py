@@ -33,7 +33,7 @@ from detectron2.data import MetadataCatalog, build_detection_train_loader, build
 from detectron2.modeling import GeneralizedRCNNWithTTA
 from detectron2.utils.logger import setup_logger
 
-from adet.evaluation import AmodalVisibleEvaluator, VisibleEvaluator, AmodalEvaluator
+from adet.evaluation import AmodalVisibleEvaluator, VisibleEvaluator, AmodalEvaluator, TextEvaluator
 from adet.config import get_cfg
 from adet.data.dataset_mapper import DatasetMapperWithBasis
 from adet.checkpoint import AdetCheckpointer
@@ -131,7 +131,7 @@ class Trainer(DefaultTrainer):
                     output_dir=output_folder,
                 )
             )
-        if evaluator_type in ["coco", "coco_panoptic_seg", "uoais"]:
+        if evaluator_type in ["coco", "coco_panoptic_seg", "uoais", "vmrn"]:
             evaluator_list.append(COCOEvaluator(dataset_name, cfg, True, output_folder))
         if evaluator_type == "coco_panoptic_seg":
             evaluator_list.append(COCOPanopticEvaluator(dataset_name, output_folder))
@@ -260,7 +260,7 @@ def setup(args):
 
 def main(args):
     cfg = setup(args)
-
+    
     if args.eval_only:
         model = Trainer.build_model(cfg)
         AdetCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
@@ -290,7 +290,8 @@ if __name__ == "__main__":
     parser = default_argument_parser()
     parser.add_argument("--gpu", type=str, default="0", help="gpu id")
     args = parser.parse_args()
-    
+    # args.config_file = 'configs/R50_rgbdconcat_mlc_occatmask_hom_concat.yaml'
+    # args.config_file = 'configs/meta.yaml'
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     print("Command Line Args:", args)
     launch(

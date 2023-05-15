@@ -32,7 +32,7 @@ def load_segm(anno, type):
     if isinstance(segm, dict):
         if isinstance(segm["counts"], list):
             # convert to compressed RLE
-            segm = mask_util.frPyObjects(segm, *segm["size"])
+            segm = mask_utils.frPyObjects(segm, *segm["size"])
     else:
         # filter out invalid polygons (< 3 points)
         segm = [poly for poly in segm if len(poly) % 2 == 0 and len(poly) >= 6]
