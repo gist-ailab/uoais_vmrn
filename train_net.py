@@ -290,8 +290,10 @@ if __name__ == "__main__":
     parser = default_argument_parser()
     parser.add_argument("--gpu", type=str, default="0", help="gpu id")
     args = parser.parse_args()
-    # args.config_file = 'configs/R50_rgbdconcat_mlc_occatmask_hom_concat.yaml'
-    # args.config_file = 'configs/meta.yaml'
+    if args.config_file == '':
+        args.gpu = str(6)
+        # args.config_file = 'configs/R50_rgbdconcat_mlc_occatmask_hom_concat.yaml'
+        args.config_file = 'configs/meta.yaml'
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     print("Command Line Args:", args)
     launch(

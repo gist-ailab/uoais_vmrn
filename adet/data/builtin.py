@@ -29,8 +29,8 @@ from .register_meta import register_meta_instances
 _PREDEFINED_SPLITS_META = {
     "meta_real_train": ("MetaGraspNet/dataset_real/", "MetaGraspNet/Annotations/meta_real_train.json"),
     "meta_real_val": ("MetaGraspNet/dataset_real/", "MetaGraspNet/Annotations/meta_real_val.json"),
-    "meta_sim_train": ("MetaGraspNet/dataset_sim/", "MetaGraspNet/Annotations/meta_sim_train_230515.json"),
-    "meta_sim_val": ("MetaGraspNet/dataset_sim/", "MetaGraspNet/Annotations/meta_sim_val_230515.json"),
+    "meta_sim_train": ("MetaGraspNet/dataset_sim/", "MetaGraspNet/Annotations/meta_sim_train.json"),
+    "meta_sim_val": ("MetaGraspNet/dataset_sim/", "MetaGraspNet/Annotations/meta_sim_val.json"),
     "meta_sim_train_debug": ("MetaGraspNet/dataset_sim/", "MetaGraspNet/Annotations/meta_sim_train_debug.json"),
     "meta_sim_val_debug": ("MetaGraspNet/dataset_sim/", "MetaGraspNet/Annotations/meta_sim_val_debug.json"),
 }

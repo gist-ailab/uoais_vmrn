@@ -76,6 +76,7 @@ class DatasetMapperWithBasis(DatasetMapper):
         self.color_aug = cfg.INPUT.COLOR_AUGMENTATION
         self.depth_only = cfg.INPUT.DEPTH_ONLY
         self.perlin_distortion = cfg.INPUT.PERLIN_DISTORTION
+        self.cfg = cfg
 
         if is_train:
             self.is_wisdom = "wisdom" in cfg.DATASETS.TRAIN[0] 
@@ -91,21 +92,21 @@ class DatasetMapperWithBasis(DatasetMapper):
             if self.depth_only:
                self.augmentation_lists = [
                 T.RandomApply(T.RandomCrop("relative_range", (cr, cr))),
-                T.RandomFlip(0.5),
+                # T.RandomFlip(0.5),
                 Resize((self.img_size[1], self.img_size[0]))
                 ]
             else:
                 self.augmentation_lists = [
-                    T.RandomApply(T.RandomCrop("relative_range", (cr, cr))),
+                    # T.RandomApply(T.RandomCrop("relative_range", (cr, cr))),
                     ColorAugSSDTransform(img_format=cfg.INPUT.FORMAT),
-                    T.RandomFlip(0.5),
-                    Resize((self.img_size[1], self.img_size[0]))
+                    # T.RandomFlip(0.5),
+                    # Resize((self.img_size[1], self.img_size[0]))
                     ]
         elif not self.color_aug and is_train:
             self.augmentation_lists = [
-                T.RandomApply(T.RandomCrop("relative_range", (cr, cr))),
-                T.RandomFlip(0.5),
-                Resize((self.img_size[1], self.img_size[0]))
+                # T.RandomApply(T.RandomCrop("relative_range", (cr, cr))),
+                # T.RandomFlip(0.5),
+                # Resize((self.img_size[1], self.img_size[0]))
             ]
             
         else:
@@ -152,11 +153,21 @@ class DatasetMapperWithBasis(DatasetMapper):
             image = np.concatenate([image, depth], -1)
         elif self.depth and self.rgbd_fusion == "early":
             pass
-
-        boxes = np.asarray([BoxMode.convert(
-                    instance["bbox"], instance["bbox_mode"], BoxMode.XYXY_ABS
-                    )
-                        for instance in dataset_dict["annotations"]])
+        
+        if 'meta' in self.cfg.DATASETS.TRAIN[0]:
+            boxes = np.asarray([BoxMode.convert(
+                        instance["bbox"], instance["bbox_mode"], BoxMode.XYXY_ABS
+                        )
+                            for instance in dataset_dict["annotations"]])
+            # boxes = np.asarray([BoxMode.convert(
+            #             instance["visible_bbox"], instance["bbox_mode"], BoxMode.XYXY_ABS
+            #             )
+            #                 for instance in dataset_dict["annotations"]])
+        else:
+            boxes = np.asarray([BoxMode.convert(
+                        instance["bbox"], instance["bbox_mode"], BoxMode.XYXY_ABS
+                        )
+                            for instance in dataset_dict["annotations"]])
 
         # apply the color augmentation
         aug_input = T.AugInput(image, boxes=boxes)

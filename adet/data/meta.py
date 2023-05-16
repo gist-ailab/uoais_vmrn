@@ -56,7 +56,7 @@ def load_meta_json(json_file, image_root, dataset_name=None, extra_annotation_ke
     logger.info("Loaded {} images in COCO format from {}".format(len(imgs_anns), json_file))
 
     dataset_dicts = []
-    ann_keys = ["bbox", "category_id"] + (extra_annotation_keys or [])
+    ann_keys = ["bbox", "category_id", "visible_bbox", "area"] + (extra_annotation_keys or [])
 
     num_instances_without_valid_segmentation = 0
     for (img_dict, anno_dict_list) in imgs_anns:
@@ -82,7 +82,6 @@ def load_meta_json(json_file, image_root, dataset_name=None, extra_annotation_ke
             obj["occluded_rate"] = anno.get("occluded_rate", None)
 
             obj["bbox_mode"] = BoxMode.XYWH_ABS     # (x0, y0, w, h)
-            # obj["category_id"] = 0
         
             objs.append(obj)
 
