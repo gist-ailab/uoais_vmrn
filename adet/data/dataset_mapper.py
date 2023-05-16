@@ -154,20 +154,11 @@ class DatasetMapperWithBasis(DatasetMapper):
         elif self.depth and self.rgbd_fusion == "early":
             pass
         
-        if 'meta' in self.cfg.DATASETS.TRAIN[0]:
-            boxes = np.asarray([BoxMode.convert(
-                        instance["bbox"], instance["bbox_mode"], BoxMode.XYXY_ABS
-                        )
-                            for instance in dataset_dict["annotations"]])
-            # boxes = np.asarray([BoxMode.convert(
-            #             instance["visible_bbox"], instance["bbox_mode"], BoxMode.XYXY_ABS
-            #             )
-            #                 for instance in dataset_dict["annotations"]])
-        else:
-            boxes = np.asarray([BoxMode.convert(
-                        instance["bbox"], instance["bbox_mode"], BoxMode.XYXY_ABS
-                        )
-                            for instance in dataset_dict["annotations"]])
+        
+        boxes = np.asarray([BoxMode.convert(
+                    instance["bbox"], instance["bbox_mode"], BoxMode.XYXY_ABS
+                    )
+                        for instance in dataset_dict["annotations"]])
 
         # apply the color augmentation
         aug_input = T.AugInput(image, boxes=boxes)
