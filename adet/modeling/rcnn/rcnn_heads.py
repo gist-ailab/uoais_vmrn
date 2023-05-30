@@ -409,9 +409,9 @@ class ORCNNROIHeads(ROIHeads):
         See :class:`ROIHeads.forward`.
         """
         if self.training:
-            # if self.occlusion_order:
-            #     proposals, obj_ids = self.label_and_sample_proposals(proposals, targets)
-            # else:
+            # # if self.occlusion_order:
+            # #     proposals, obj_ids = self.label_and_sample_proposals(proposals, targets)
+            # # else:
             proposals = self.label_and_sample_proposals(proposals, targets)
         # del targets
 
@@ -425,9 +425,12 @@ class ORCNNROIHeads(ROIHeads):
             losses.update(amodal_vis_occ_losses)
 
             if self.occlusion_order:
-                occ_order_losses = self._forward_order(features, proposals, box_head_features, mask_head_features, roi_feat_obj, roi_feat_union, num_obj, num_union, targets)
-                losses.update({'loss_rel': occ_order_losses})
+                pass
+            #     occ_order_losses = self._forward_order(features, proposals, box_head_features, mask_head_features, roi_feat_obj, roi_feat_union, num_obj, num_union, targets)
+            #     losses.update({'loss_rel': occ_order_losses})
 
+            if self.occlusion_order:
+                return proposals, losses, roi_feat_obj, roi_feat_union, num_obj, num_union
             return proposals, losses
 
         else:
@@ -439,7 +442,8 @@ class ORCNNROIHeads(ROIHeads):
             return pred_instances, {}
 
     def _forward_box(self, features: List[torch.Tensor], proposals: List[Instances], targets: List[Instances]
-                    ) -> Union[Dict[str, torch.Tensor], List[Instances]]:
+                    ):
+        # -> Union[Dict[str, torch.Tensor], List[Instances]]:
         """
         Forward logic of the box prediction branch. If `self.train_on_pred_boxes is True`,
             the function puts predicted boxes in the `proposal_boxes` field of `proposals` argument.

@@ -69,11 +69,11 @@ TEST:
 
 INPUT:
   MASK_FORMAT: "rle"
-  IMG_SIZE: (640, 480)
+  IMG_SIZE: (1200, 1200)
   COLOR_AUGMENTATION: True
   PERLIN_DISTORTION: False
   CROP_RATIO: 0.5
   AMODAL: True 
   DEPTH: False
 
-OUTPUT_DIR: "output/R50_rgb_mlc_occatmask_hom_concat"
+OUTPUT_DIR: "output/meta/d/"

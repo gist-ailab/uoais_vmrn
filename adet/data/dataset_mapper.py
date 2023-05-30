@@ -76,6 +76,7 @@ class DatasetMapperWithBasis(DatasetMapper):
         self.color_aug = cfg.INPUT.COLOR_AUGMENTATION
         self.depth_only = cfg.INPUT.DEPTH_ONLY
         self.perlin_distortion = cfg.INPUT.PERLIN_DISTORTION
+        self.vmrn = cfg.MODEL.ROI_OCCLUSION_ORDER
         self.cfg = cfg
 
         if is_train:
@@ -100,7 +101,7 @@ class DatasetMapperWithBasis(DatasetMapper):
                     # T.RandomApply(T.RandomCrop("relative_range", (cr, cr))),
                     ColorAugSSDTransform(img_format=cfg.INPUT.FORMAT),
                     # T.RandomFlip(0.5),
-                    # Resize((self.img_size[1], self.img_size[0]))
+                    Resize((self.img_size[1], self.img_size[0]))
                     ]
         elif not self.color_aug and is_train:
             self.augmentation_lists = [
@@ -108,7 +109,6 @@ class DatasetMapperWithBasis(DatasetMapper):
                 # T.RandomFlip(0.5),
                 # Resize((self.img_size[1], self.img_size[0]))
             ]
-            
         else:
             self.augmentation_lists = [
                 Resize((self.img_size[1], self.img_size[0]))
@@ -168,6 +168,12 @@ class DatasetMapperWithBasis(DatasetMapper):
         dataset_dict["image"] = torch.as_tensor(
             np.ascontiguousarray(image.transpose(2, 0, 1))
         )
+
+        ## Add Relationship Matrix
+        if self.vmrn:
+            dataset_dict["rel_mat"] = torch.as_tensor(
+                np.ascontiguousarray(dataset_dict["rel_mat"])
+            )
 
         # if self.depth and self.rgbd_fusion != "none":
         #     depth = torch.as_tensor(
