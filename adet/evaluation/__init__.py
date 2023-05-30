@@ -4,3 +4,4 @@ from . import rrc_evaluation_funcs
 from .amodalvisible_evaluation import AmodalVisibleEvaluator
 from .amodal_evaluation import AmodalEvaluator
 from .visible_evaluation import VisibleEvaluator
+from .vmrn_evaluation import VMRNEvaluator

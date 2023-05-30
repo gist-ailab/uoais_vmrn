@@ -71,7 +71,7 @@ DATASETS:
     
 TEST:
   EVAL_PERIOD: 90000 # no evaluation if 0
-  EVAL_TARGET: ["amodal_visible"]
+  EVAL_TARGET: ["amodal_visible", "relationship"]
 
 INPUT:
   MASK_FORMAT: "rle"
