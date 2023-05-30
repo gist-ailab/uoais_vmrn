@@ -131,7 +131,7 @@ class Trainer(DefaultTrainer):
                     output_dir=output_folder,
                 )
             )
-        if evaluator_type in ["coco", "coco_panoptic_seg", "uoais", "vmrn"]:
+        if evaluator_type in ["coco", "coco_panoptic_seg", "uoais"]:
             evaluator_list.append(COCOEvaluator(dataset_name, cfg, True, output_folder))
         if evaluator_type == "coco_panoptic_seg":
             evaluator_list.append(COCOPanopticEvaluator(dataset_name, output_folder))
@@ -141,7 +141,7 @@ class Trainer(DefaultTrainer):
             return LVISEvaluator(dataset_name, cfg, True, output_folder)
         if evaluator_type == "text":
             return TextEvaluator(dataset_name, cfg, True, output_folder)
-        elif evaluator_type in ["amodal"]:
+        elif evaluator_type in ["amodal", "vmrn"]:
             if "visible" in cfg.TEST.EVAL_TARGET:
                 evaluator_list.append(VisibleEvaluator(dataset_name, output_folder))
             elif "amodal" in cfg.TEST.EVAL_TARGET:

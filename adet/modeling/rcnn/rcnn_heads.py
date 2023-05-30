@@ -168,6 +168,7 @@ class ROIHeads(nn.Module):
 
         num_fg_samples = []
         num_bg_samples = []
+        obj_ids = []
         for proposals_per_image, targets_per_image in zip(proposals, targets):
             has_gt = len(targets_per_image) > 0
             match_quality_matrix = pairwise_iou(
@@ -203,12 +204,15 @@ class ROIHeads(nn.Module):
             num_bg_samples.append((gt_classes == self.num_classes).sum().item())
             num_fg_samples.append(gt_classes.numel() - num_bg_samples[-1])
             proposals_with_gt.append(proposals_per_image)
+            obj_ids.append(matched_idxs[sampled_idxs])
 
         # Log the number of fg/bg samples that are selected for training ROI heads
         storage = get_event_storage()
         storage.put_scalar("roi_head/num_fg_samples", np.mean(num_fg_samples))
         storage.put_scalar("roi_head/num_bg_samples", np.mean(num_bg_samples))
 
+        if self.occlusion_order:
+            return proposals_with_gt, obj_ids
         return proposals_with_gt
 
     def forward(self, images, features, proposals, targets=None):
@@ -276,8 +280,6 @@ class ORCNNROIHeads(ROIHeads):
         self.edge_detection = cfg.MODEL.EDGE_DETECTION 
         if self.edge_detection:
             self._init_edge_detection_head(cfg)
-        if self.occ_cls_at_mask:
-            self._init_occ_cls_mask_head(cfg)
 
 
 
@@ -354,13 +356,7 @@ class ORCNNROIHeads(ROIHeads):
             cfg, ShapeSpec(channels=in_channels, width=pooler_resolution, height=pooler_resolution)
         )
         
-    def _init_occ_cls_mask_head(self, cfg):
-        # fmt: off
-        pooler_resolution = cfg.MODEL.ROI_MASK_HEAD.POOLER_RESOLUTION
-        in_channels = [self.feature_channels[f] for f in self.in_features][0]
-        self.occ_cls_mask_head = OCCCLSMaskHead(
-            cfg, ShapeSpec(channels=in_channels, width=pooler_resolution, height=pooler_resolution)
-        )
+
     
         
     def _init_mlc_layer(self, cfg):
@@ -389,7 +385,10 @@ class ORCNNROIHeads(ROIHeads):
         See :class:`ROIHeads.forward`.
         """
         if self.training:
-            proposals = self.label_and_sample_proposals(proposals, targets)
+            if self.occlusion_order:
+                proposals, obj_ids = self.label_and_sample_proposals(proposals, targets)
+            else:
+                proposals = self.label_and_sample_proposals(proposals, targets)
         del targets
 
         if self.training:
