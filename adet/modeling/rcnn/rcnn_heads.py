@@ -168,7 +168,7 @@ class ROIHeads(nn.Module):
 
         num_fg_samples = []
         num_bg_samples = []
-        obj_ids = []
+        # obj_ids = []
         for proposals_per_image, targets_per_image in zip(proposals, targets):
             has_gt = len(targets_per_image) > 0
             match_quality_matrix = pairwise_iou(
@@ -204,15 +204,15 @@ class ROIHeads(nn.Module):
             num_bg_samples.append((gt_classes == self.num_classes).sum().item())
             num_fg_samples.append(gt_classes.numel() - num_bg_samples[-1])
             proposals_with_gt.append(proposals_per_image)
-            obj_ids.append(matched_idxs[sampled_idxs])
+            # obj_ids.append(matched_idxs[sampled_idxs])
 
         # Log the number of fg/bg samples that are selected for training ROI heads
         storage = get_event_storage()
         storage.put_scalar("roi_head/num_fg_samples", np.mean(num_fg_samples))
         storage.put_scalar("roi_head/num_bg_samples", np.mean(num_bg_samples))
 
-        if self.occlusion_order:
-            return proposals_with_gt, obj_ids
+        # if self.occlusion_order:
+        #     return proposals_with_gt, obj_ids
         return proposals_with_gt
 
     def forward(self, images, features, proposals, targets=None):
@@ -270,16 +270,25 @@ class ORCNNROIHeads(ROIHeads):
         self.guidance_type = cfg.MODEL.GUIDANCE_TYPE
         self.prediction_order = cfg.MODEL.PREDICTION_ORDER
         self.no_dense_guidance = cfg.MODEL.NO_DENSE_GUIDANCE
+        # VMRN
+        self.occlusion_order = cfg.MODEL.ROI_OCCLUSION_ORDER
+
+
                 
         self._init_box_head(cfg)
         self._init_amodal_mask_head(cfg)
         self._init_visible_mask_head(cfg)
+        # # VMRN
+        # if self.occlusion_order:
+        #     self._init_occlusion_order_head(cfg)
 
         if self.MLC:
             self._init_mlc_layer(cfg)
         self.edge_detection = cfg.MODEL.EDGE_DETECTION 
         if self.edge_detection:
             self._init_edge_detection_head(cfg)
+        if self.occ_cls_at_mask:
+            self._init_occ_cls_mask_head(cfg)
 
 
 
@@ -355,8 +364,23 @@ class ORCNNROIHeads(ROIHeads):
         self.visible_mask_head = build_visible_mask_head(
             cfg, ShapeSpec(channels=in_channels, width=pooler_resolution, height=pooler_resolution)
         )
-        
 
+    ###### VMRN
+    def _init_occlusion_order_head(self, cfg):
+        # fmt: off
+        pooler_resolution = cfg.MODEL.ROI_OCCLUSION_ORDER_HEAD.POOLER_RESOLUTION
+        in_channels = [self.feature_channels[f] for f in self.in_features][0]
+        self.occlusion_order_head = build_occlusion_order_head(
+            cfg, ShapeSpec(channels=in_channels, width=pooler_resolution, height=pooler_resolution)
+        )
+        
+    def _init_occ_cls_mask_head(self, cfg):
+        # fmt: off
+        pooler_resolution = cfg.MODEL.ROI_MASK_HEAD.POOLER_RESOLUTION
+        in_channels = [self.feature_channels[f] for f in self.in_features][0]
+        self.occ_cls_mask_head = OCCCLSMaskHead(
+            cfg, ShapeSpec(channels=in_channels, width=pooler_resolution, height=pooler_resolution)
+        )
     
         
     def _init_mlc_layer(self, cfg):
@@ -385,29 +409,36 @@ class ORCNNROIHeads(ROIHeads):
         See :class:`ROIHeads.forward`.
         """
         if self.training:
-            if self.occlusion_order:
-                proposals, obj_ids = self.label_and_sample_proposals(proposals, targets)
-            else:
-                proposals = self.label_and_sample_proposals(proposals, targets)
-        del targets
+            # if self.occlusion_order:
+            #     proposals, obj_ids = self.label_and_sample_proposals(proposals, targets)
+            # else:
+            proposals = self.label_and_sample_proposals(proposals, targets)
+        # del targets
 
         if self.training:
             features_list = [features[f] for f in self.in_features]
-            losses, box_head_features = self._forward_box(features_list, proposals)
-            amodal_vis_occ_losses = self._forward_masks(features, proposals, box_head_features)
+            if self.occlusion_order:
+                losses, box_head_features, roi_feat_obj, roi_feat_union, num_obj, num_union = self._forward_box(features_list, proposals, targets)
+            else:
+                losses, box_head_features = self._forward_box(features_list, proposals, targets)
+            amodal_vis_occ_losses, mask_head_features = self._forward_masks(features, proposals, box_head_features)
             losses.update(amodal_vis_occ_losses)
-            
+
+            if self.occlusion_order:
+                occ_order_losses = self._forward_order(features, proposals, box_head_features, mask_head_features, roi_feat_obj, roi_feat_union, num_obj, num_union, targets)
+                losses.update({'loss_rel': occ_order_losses})
+
             return proposals, losses
 
         else:
             # During inference cascaded prediction is used: the mask and keypoints heads are only
             # applied to the top scoring box detections.
             features_list = [features[f] for f in self.in_features]
-            pred_instances, box_head_features = self._forward_box(features_list, proposals)
+            pred_instances, box_head_features = self._forward_box(features_list, proposals, targets)
             pred_instances = self._forward_masks(features, pred_instances, box_head_features)
             return pred_instances, {}
 
-    def _forward_box(self, features: List[torch.Tensor], proposals: List[Instances]
+    def _forward_box(self, features: List[torch.Tensor], proposals: List[Instances], targets: List[Instances]
                     ) -> Union[Dict[str, torch.Tensor], List[Instances]]:
         """
         Forward logic of the box prediction branch. If `self.train_on_pred_boxes is True`,
@@ -423,6 +454,44 @@ class ORCNNROIHeads(ROIHeads):
             In inference, a list of `Instances`, the predicted instances.
         """
         box_features = self.box_pooler(features, [x.proposal_boxes for x in proposals])
+        ## ========================================================================================== ##
+        if self.occlusion_order:
+            boxes_batch_obj, boxes_batch_union = [], []
+            
+            for B in range(len(targets)):
+                boxes_obj, boxes_union = [], []
+
+                for i, box_i in enumerate(targets[B].gt_boxes.tensor):
+                    if boxes_obj == []:
+                        boxes_obj = box_i.unsqueeze(0)
+                    else:
+                        boxes_obj = torch.cat([boxes_obj, box_i.unsqueeze(0)], dim=0)
+                    
+                    for j, box_j in enumerate(targets[B].gt_boxes.tensor):
+                        if i == j: continue
+                        minx, miny = min(box_i[0], box_j[0]), min(box_i[1], box_j[1])
+                        maxx, maxy = max(box_i[2], box_j[2]), max(box_i[3], box_j[3])
+                        box_union = torch.FloatTensor([minx, miny, maxx, maxy]).unsqueeze(0).cuda()
+
+                        if boxes_union == []:
+                            boxes_union = box_union
+                        else:
+                            boxes_union = torch.cat([boxes_union, box_union], dim=0)
+
+                boxes_batch_obj.append(Boxes(boxes_obj))
+                if boxes_union != []:
+                    boxes_batch_union.append(Boxes(boxes_union))
+                else:
+                    boxes_batch_union.append(Boxes(torch.tensor([[0, 0, 0, 0]]).cuda()))
+                if B == 0:
+                    num_obj, num_union = len(boxes_obj), len(boxes_union)
+
+
+            roi_feat_obj = self.box_pooler(features, [x for x in boxes_batch_obj])
+            roi_feat_union = self.box_pooler(features, [x for x in boxes_batch_union])
+
+        ## ========================================================================================== ##
+
         box_head_features, first_head_features = self.box_head(box_features)
         pred_class_logits, pred_proposal_deltas = self.box_predictor(box_head_features)
 
@@ -459,6 +528,8 @@ class ORCNNROIHeads(ROIHeads):
                     pred_boxes = outputs.predict_boxes_for_gt_classes()
                     for proposals_per_image, pred_boxes_per_image in zip(proposals, pred_boxes):
                         proposals_per_image.proposal_boxes = Boxes(pred_boxes_per_image)
+            if self.occlusion_order:
+                return outputs.losses(), box_head_features, roi_feat_obj, roi_feat_union, num_obj, num_union
             return outputs.losses(), box_head_features
         else:
             pred_instances, index = outputs.inference(
@@ -558,7 +629,7 @@ class ORCNNROIHeads(ROIHeads):
     def _forward_masks(self, features, instances, box_head_features):
 
         features = [features[f] for f in self.in_features]
-#
+
         if self.training:
             # get MLC features from box branch
             proposals, _, fg_indexes = select_foreground_proposals(instances, self.num_classes)
@@ -586,7 +657,7 @@ class ORCNNROIHeads(ROIHeads):
                 occ_mask_loss = occlusion_mask_rcnn_loss(occ_mask_logits, proposals, False)
                 losses["loss_occlusion_mask"] = occ_mask_loss
 
-            return losses
+            return losses, mask_features_list       ## VMRN
         else:
             # pred_boxes = [x.pred_boxes for x in instances]
             features = self.mask_pooler(features, instances)
@@ -603,3 +674,39 @@ class ORCNNROIHeads(ROIHeads):
                 occlusion_mask_rcnn_inference(occ_mask_logits, instances)
 
             return instances
+
+    def _forward_order(self, features, instances, box_head_features, mask_head_features, roi_feat_obj, roi_feat_union, num_obj, num_union, targets):
+
+        features = [features[f] for f in self.in_features]
+        if self.training:
+            union_idx = 0
+            for B in range(len(targets)):
+                rel_mat = targets[B]['rel_mat']
+                if B == 0:
+                    roi_feat_batch_obj = roi_feat_obj[:num_obj]
+                else:
+                    roi_feat_batch_obj = roi_feat_obj[num_obj:]
+                if len(roi_feat_batch_obj) <= 1:
+                    continue
+                for i, feat_i in enumerate(roi_feat_batch_obj):
+                    for j, feat_j in enumerate(roi_feat_batch_obj):
+                        if i == j: continue
+                        
+                        output_i = self.rel_layers_o1(feat_i.unsqueeze(0))
+                        output_j = self.rel_layers_o2(feat_j.unsqueeze(0))
+                        output_u = self.rel_layers_union(roi_feat_union[union_idx].unsqueeze(0))
+                        union_idx += 1
+
+                    flatten_i = torch.flatten(output_i)
+                    flatten_j = torch.flatten(output_j)
+                    flatten_u = torch.flatten(output_u)
+                    flatten = torch.cat((flatten_i, flatten_j, flatten_u)).unsqueeze(0)
+                    output = self.rel_fc_layers(flatten)
+                    
+                    gt = self.rel_gt(rel_mat[i][j], rel_mat[j][i])
+                    # VMRN loss
+                    rel_loss += F.cross_entropy(output, torch.tensor(gt).view(1).cuda())
+
+
+        return rel_loss
+            

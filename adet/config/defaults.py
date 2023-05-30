@@ -75,6 +75,13 @@ _C.MODEL.ROI_EDGE_DETECTION_HEAD.POOLER_TYPE = "ROIAlignV2"
 _C.MODEL.ROI_EDGE_DETECTION_HEAD.NORM = None
 _C.MODEL.ROI_EDGE_DETECTION_HEAD.LOSS_WEIGHT = 1.0
 
+# VMRN
+_C.MODEL.ROI_OCCLUSION_ORDER = False
+_C.MODEL.ROI_OCCLUSION_ORDER_HEAD = CN()
+_C.MODEL.ROI_OCCLUSION_ORDER_HEAD.NAME = "OcclusionOrderConvUpsampleHead"
+_C.MODEL.ROI_OCCLUSION_ORDER_HEAD.POOLER_RESOLUTION = 7
+_C.MODEL.ROI_OCCLUSION_ORDER_HEAD.NUM_CLASSES = 3
+
 # ---------------------------------------------------------------------------- #
 # Additional Configs
 # ---------------------------------------------------------------------------- #

@@ -323,6 +323,18 @@ def occlusion_classifcation_inference(occlusion_logits, instances):
     gt_occlusion = cat([p.gt_occluded_rate >= 0.05 for p in instances], dim=0)
     return F.cross_entropy(occlusion_logits, gt_occlusion, reduction="mean")
 
+##### VMRN
+def occlusion_order_loss(occlusion_logits, instances):
+
+    gt_occlusion_bool = cat([p.gt_occluded_rate >= 0.05 for p in instances], dim=0)
+    return F.cross_entropy(occlusion_logits, gt_occlusion_bool.to(torch.int64), reduction="mean", weight=torch.Tensor([1, 8]).to(gt_occlusion_bool.device))
+      
+def occlusion_order_inference(occlusion_logits, instances):
+
+    gt_occlusion = cat([p.gt_occluded_rate >= 0.05 for p in instances], dim=0)
+    return F.cross_entropy(occlusion_logits, gt_occlusion, reduction="mean")
+
+
 def mask_rcnn_inference(pred_mask_logits, pred_instances, target="pred_masks"):
     """
     Convert pred_mask_logits to estimated foreground probability masks while also
@@ -847,3 +859,83 @@ def build_occlusion_classification_head(cfg, input_shape):
     """
     name = cfg.MODEL.ROI_OCC_CLS_HEAD.NAME
     return ROI_MASK_HEAD_REGISTRY.get(name)(cfg, input_shape)
+
+###### VMRN
+def build_occlusion_order_head(cfg, input_shape):
+    name = cfg.MODEL.ROI_OCCLUSION_ORDER_HEAD.NAME
+    return ROI_MASK_HEAD_REGISTRY.get(name)(cfg, input_shape)
+    
+###### VMRN
+@ROI_MASK_HEAD_REGISTRY.register()
+class OcclusionOrderConvUpsampleHead(nn.Module):
+    """
+    A mask head with several conv layers, plus an upsample layer (with `ConvTranspose2d`).
+    """
+
+    def __init__(self, cfg, input_shape: ShapeSpec, name=""):
+        """
+        The following attributes are parsed from config:
+            num_conv: the number of conv layers
+            conv_dim: the dimension of the conv layers
+            norm: normalization for the conv layers
+        """
+        super(OcclusionOrderConvUpsampleHead, self).__init__()
+
+        # fmt: off
+        num_classes = cfg.MODEL.ROI_OCCLUSION_ORDER_HEAD.NUM_CLASSES
+        pooler_resolution = cfg.MODEl.ROI_OCCLUSION_ORDER_HEAD.POOLER_RESOLUTION
+        input_channels    = input_shape.channels
+
+        self.rel_layers_o1 = []
+        self.rel_layers_o1.append(Conv2d(256, 256, kernel_size=1, stride=1, padding=0, activation=F.relu))
+        self.rel_layers_o1.append(Conv2d(256, 256, kernel_size=3, stride=1, padding=1, activation=F.relu))
+        self.rel_layers_o1.append(Conv2d(256, 64, kernel_size=1, stride=1, padding=0, activation=F.relu))
+        self.rel_layers_o1.append(Conv2d(64, 64, kernel_size=3, stride=1, padding=1, activation=F.relu))
+
+        self.rel_layers_o2 = []
+        self.rel_layers_o2.append(Conv2d(256, 256, kernel_size=1, stride=1, padding=0, activation=F.relu))
+        self.rel_layers_o2.append(Conv2d(256, 256, kernel_size=3, stride=1, padding=1, activation=F.relu))
+        self.rel_layers_o2.append(Conv2d(256, 64, kernel_size=1, stride=1, padding=0, activation=F.relu))
+        self.rel_layers_o2.append(Conv2d(64, 64, kernel_size=3, stride=1, padding=1, activation=F.relu))
+
+        self.rel_layers_union = []
+        self.rel_layers_union.append(Conv2d(256, 256, kernel_size=1, stride=1, padding=0, activation=F.relu))
+        self.rel_layers_union.append(Conv2d(256, 256, kernel_size=3, stride=1, padding=1, activation=F.relu))
+        self.rel_layers_union.append(Conv2d(256, 64, kernel_size=1, stride=1, padding=0, activation=F.relu))
+        self.rel_layers_union.append(Conv2d(64, 64, kernel_size=3, stride=1, padding=1, activation=F.relu))
+
+        # input_size = 3*64*pooler_resolution*pooler_resolution   # input_shape.channels * (input_shape.width//2 or 1) * (input_shape.height//2 or 1)
+        _input_dim = 3*3136
+        self.relationship_fc_layers = []
+        self.relationship_fc_layers.append(nn.Linear(_input_dim, 2048))
+        self.relationship_fc_layers.append(F.relu())
+        self.relationship_fc_layers.append(nn.Linear(2048, 2048))
+        self.relationship_fc_layers.append(F.relu())
+        self.relationship_fc_layers.append(nn.Linear(2048, 3))
+        self.relationship_fc_layers.append(F.relu())
+
+
+
+    def forward(self, x, instance, extracted_features, union_features):
+        """
+        Args:
+            x: input region feature(s) provided by :class:`ROIHeads`.
+            instances: contains the boxes & labels corresponding
+                to the input features.
+                Exact format is up to its caller to decide.
+                Typically, this is the foreground instances in training, with
+                "proposal_boxes" field and other gt annotations.
+                In inference, it contains boxes that are already predicted.
+        Returns:
+            mask_logits: predicted mask logits from given region features
+        """
+        
+        for layer in self.relationship_layers:
+            x = layer(x)
+
+        x = torch.flatten(x, 1)
+        for layer in self.relationship_fc_layers:
+            x = layer(x)
+        
+        return x
+
