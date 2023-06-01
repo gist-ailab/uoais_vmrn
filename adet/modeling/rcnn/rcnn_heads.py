@@ -437,8 +437,13 @@ class ORCNNROIHeads(ROIHeads):
             # During inference cascaded prediction is used: the mask and keypoints heads are only
             # applied to the top scoring box detections.
             features_list = [features[f] for f in self.in_features]
-            pred_instances, box_head_features = self._forward_box(features_list, proposals, targets)
+            if self.occlusion_order:
+                pred_instances, box_head_features, roi_feat_obj, roi_feat_union, num_obj, num_union = self._forward_box(features_list, proposals, targets)
+            else:
+                pred_instances, box_head_features = self._forward_box(features_list, proposals, targets)
             pred_instances = self._forward_masks(features, pred_instances, box_head_features)
+            if self.occlusion_order:
+                return pred_instances, roi_feat_obj, roi_feat_union, num_obj, num_union
             return pred_instances, {}
 
     def _forward_box(self, features: List[torch.Tensor], proposals: List[Instances], targets: List[Instances]
@@ -541,6 +546,8 @@ class ORCNNROIHeads(ROIHeads):
             )
             if box_head_features is not None:
                 box_head_features = box_head_features[index]
+            if self.occlusion_order:
+                return pred_instances, box_head_features, roi_feat_obj, roi_feat_union, num_obj, num_union
             return pred_instances, box_head_features
 
     def _forward_single_mask(self, pred_target, features, mask_features_list, 
