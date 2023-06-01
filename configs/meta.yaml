@@ -88,5 +88,5 @@ INPUT:
   DEPTH: False    ## VMRN 
   DEPTH_RANGE: [2500, 15000]
 
-OUTPUT_DIR: "output/meta/U02/"
+OUTPUT_DIR: "output/meta/d/"
 SEED: 7

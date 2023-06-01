@@ -33,7 +33,7 @@ from detectron2.data import MetadataCatalog, build_detection_train_loader, build
 from detectron2.modeling import GeneralizedRCNNWithTTA
 from detectron2.utils.logger import setup_logger
 
-from adet.evaluation import AmodalVisibleEvaluator, VisibleEvaluator, AmodalEvaluator, TextEvaluator, VMRNEvaluator
+from adet.evaluation import AmodalVisibleEvaluator, VisibleEvaluator, AmodalEvaluator, TextEvaluator, VMRNEvaluator, AmodalVMRNEvaluator
 from adet.config import get_cfg
 from adet.data.dataset_mapper import DatasetMapperWithBasis
 from adet.checkpoint import AdetCheckpointer
@@ -149,14 +149,11 @@ class Trainer(DefaultTrainer):
             elif "amodal_visible" in cfg.TEST.EVAL_TARGET:
                 evaluator_list.append(AmodalVisibleEvaluator(dataset_name, cfg, output_dir=output_folder))
         if evaluator_type == "vmrn":
-            if "visible" in cfg.TEST.EVAL_TARGET:
-                evaluator_list.append(VisibleEvaluator(dataset_name, output_folder))
-            elif "amodal" in cfg.TEST.EVAL_TARGET:
-                evaluator_list.append(AmodalEvaluator(dataset_name, output_folder))
+            if "relationship" in cfg.TEST.EVAL_TARGET:
+                evaluator_list.append(AmodalVMRNEvaluator(dataset_name, cfg, output_folder))
             elif "amodal_visible" in cfg.TEST.EVAL_TARGET:
                 evaluator_list.append(AmodalVisibleEvaluator(dataset_name, cfg, output_dir=output_folder))
-            if "relationship" in cfg.TEST.EVAL_TARGET:
-                evaluator_list.append(VMRNEvaluator(dataset_name, cfg, output_folder))
+            
         if len(evaluator_list) == 0:
             raise NotImplementedError(
                 "no Evaluator for the dataset {} with the type {}".format(
@@ -165,6 +162,7 @@ class Trainer(DefaultTrainer):
             )
         if len(evaluator_list) == 1:
             return evaluator_list[0]
+        print('evaluator list ', evaluator_list)
         return DatasetEvaluators(evaluator_list)
 
     @classmethod

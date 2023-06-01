@@ -99,7 +99,7 @@ class VMRN_MR(GeneralizedRCNN):
         )
         # opfc.append(self.VMRN_rel_top_union(pooled_pair[:, 2]).mean(3).mean(2))
         # torch.cat(opfc, 1)
-        _input_dim = 3*3136
+        _input_dim = 192
         rel_fc_layers = nn.Sequential(
             nn.Linear(_input_dim, 2048),
             # nn.BatchNorm2d(2048),
@@ -158,7 +158,7 @@ class VMRN_MR(GeneralizedRCNN):
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
         else:
             gt_instances = None
-
+        # print(images.tensor.shape)
         features = self.backbone(images.tensor)
 
         if self.proposal_generator is not None:
@@ -169,12 +169,16 @@ class VMRN_MR(GeneralizedRCNN):
             proposal_losses = {}
 
         _, detector_losses, roi_feat_obj, roi_feat_union, num_obj, num_union = self.roi_heads(images, features, proposals, gt_instances)
+        # _, detector_losses, nms_features, union_features, u_Boxes_idxs, proposal0_len = self.roi_heads(images, features, proposals, gt_instances)
         if self.vis_period > 0:
             storage = get_event_storage()
             if storage.iter % self.vis_period == 0:
                 self.visualize_training(batched_inputs, proposals)
 
         # # ## Relationship Detection
+        ####   CHECK_BEFORE_TRAIN   ####
+        # roi_feat_obj = roi_feat_obj.detach()
+        # roi_feat_union = roi_feat_union.detach()
 
         rel_loss = torch.tensor(0.).float().cuda()
         rel_criterion = nn.CrossEntropyLoss()   # num_classes = 3   # 0: Parent / 1: Child / 2: None
@@ -182,36 +186,59 @@ class VMRN_MR(GeneralizedRCNN):
         union_idx = 0
         for B in range(len(batched_inputs)):
             rel_mat = batched_inputs[B]['rel_mat']
+            pred_rel_mat = torch.zeros_like(rel_mat)
             if B == 0:
                 roi_feat_batch_obj = roi_feat_obj[:num_obj]
             else:
                 roi_feat_batch_obj = roi_feat_obj[num_obj:]
             if len(roi_feat_batch_obj) <= 1:
                 continue
+            obj_pair_feat = []
+            gts = []
             for i, feat_i in enumerate(roi_feat_batch_obj):
                 for j, feat_j in enumerate(roi_feat_batch_obj):
                     if i == j: continue
                     
-                    output_i = self.rel_layers_o1(feat_i.unsqueeze(0))
-                    output_j = self.rel_layers_o2(feat_j.unsqueeze(0))
-                    output_u = self.rel_layers_union(roi_feat_union[union_idx].unsqueeze(0))
+                    opfc = []
+                    opfc.append(self.rel_layers_o1(feat_i.unsqueeze(0)).mean(3).mean(2))
+                    opfc.append(self.rel_layers_o2(feat_j.unsqueeze(0)).mean(3).mean(2))
+                    opfc.append(self.rel_layers_union(roi_feat_union[union_idx].unsqueeze(0)).mean(3).mean(2))
+                    
                     union_idx += 1
 
-                flatten_i = torch.flatten(output_i)
-                flatten_j = torch.flatten(output_j)
-                flatten_u = torch.flatten(output_u)
-                flatten = torch.cat((flatten_i, flatten_j, flatten_u)).unsqueeze(0)
-                output = self.rel_fc_layers(flatten)
-                
-                gt = self.rel_gt(rel_mat[i][j], rel_mat[j][i])
+                    obj_pair_feat.append(torch.cat(opfc, 1))
+                    gt = self.rel_gt(rel_mat[i][j], rel_mat[j][i])
+                    gts.append(gt)
 
-                ####   CHECK_BEFORE_TRAIN   ####
-                if gt < 2:
-                    rel_loss += rel_criterion(output, torch.tensor(gt).view(1).cuda())
-                else:
-                    rel_loss += rel_criterion(output, torch.tensor(gt).view(1).cuda())
+            obj_pair_feat = torch.cat(obj_pair_feat, 0)
+            output = self.rel_fc_layers(obj_pair_feat)
+            pred = torch.argmax(output, dim=1)
+            pred_idx = 0
+            for i, feat_i in enumerate(roi_feat_batch_obj):
+                for j, feat_j in enumerate(roi_feat_batch_obj):
+                    if i == j: continue
+                    if pred[pred_idx] == 0:     # i is parent of j
+                        pred_rel_mat[i][j] = -1
+                    elif pred[pred_idx] == 1:   # i is child of j
+                        pred_rel_mat[i][j] = 1
+            print('@@ Pred Rel Mat \t\t vs \t\t GT Rel Mat')
+            gts_mask = []
+            for i in range(len(pred_rel_mat)):
+                print(pred_rel_mat[i], '\t\t\t', rel_mat[i])
+                gts_mask.append(gts[i] < 2)
+            print()
+            ####   CHECK_BEFORE_TRAIN   ####
+            rel_loss += rel_criterion(output, torch.tensor(gts).view(-1).cuda())
+            # REL_LOSS_W = 9
+            # for i, (o, g) in enumerate(zip(output, gts)):
+            #     if g < 2:
+            #         rel_loss += REL_LOSS_W*rel_criterion(o.unsqueeze(0), torch.tensor(g).view(-1).cuda())
+            #     else:
+            #         rel_loss += rel_criterion(o.unsqueeze(0), torch.tensor(g).view(-1).cuda())
 
 
+
+        
         ####   CHECK_BEFORE_TRAIN   ####
         if len(roi_feat_union):
             rel_loss /= len(roi_feat_union)
@@ -225,6 +252,8 @@ class VMRN_MR(GeneralizedRCNN):
 
 
     def rel_gt(self, AB, BA):
+        # AB: A=row, B=column
+        # return A's class
         if AB == -1: return 0   # Parent
         elif BA == -1: return 1 # Child
         return 2   # None
@@ -258,7 +287,10 @@ class VMRN_MR(GeneralizedRCNN):
             images = self.preprocess_image(batched_inputs)
             if "annotations" in batched_inputs[0]:
                 gt_instances = []
+
+                ####   CHECK_BEFORE_TRAIN   ####
                 image_size = (800, 800)
+                # image_size = (640, 480)
                 for x in batched_inputs:
                     gt_boxes = []
                     for y in x['annotations']:
@@ -314,7 +346,7 @@ class VMRN_MR(GeneralizedRCNN):
                         flatten_u = torch.flatten(output_u)
                         flatten = torch.cat((flatten_i, flatten_j, flatten_u)).unsqueeze(0)
                         output = self.rel_fc_layers(flatten)
-                        predict = torch.argmax(output, dim=0)
+                        predict = torch.argmax(output, dim=1)
                         if predict == 0:        # parent
                             pred_rel_mat[i][j] = -1
                         elif predict == 1:      # child

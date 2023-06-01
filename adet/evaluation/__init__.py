@@ -5,3 +5,4 @@ from .amodalvisible_evaluation import AmodalVisibleEvaluator
 from .amodal_evaluation import AmodalEvaluator
 from .visible_evaluation import VisibleEvaluator
 from .vmrn_evaluation import VMRNEvaluator
+from .amodal_vmrn_evaluation import AmodalVMRNEvaluator
