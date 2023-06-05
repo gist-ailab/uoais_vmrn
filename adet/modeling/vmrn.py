@@ -177,8 +177,8 @@ class VMRN_MR(GeneralizedRCNN):
 
         # # ## Relationship Detection
         ####   CHECK_BEFORE_TRAIN   ####
-        # roi_feat_obj = roi_feat_obj.detach()
-        # roi_feat_union = roi_feat_union.detach()
+        roi_feat_obj = roi_feat_obj.detach()
+        roi_feat_union = roi_feat_union.detach()
 
         rel_loss = torch.tensor(0.).float().cuda()
         rel_criterion = nn.CrossEntropyLoss()   # num_classes = 3   # 0: Parent / 1: Child / 2: None
@@ -228,13 +228,13 @@ class VMRN_MR(GeneralizedRCNN):
                 gts_mask.append(gts[i] < 2)
             print()
             ####   CHECK_BEFORE_TRAIN   ####
-            rel_loss += rel_criterion(output, torch.tensor(gts).view(-1).cuda())
-            # REL_LOSS_W = 9
-            # for i, (o, g) in enumerate(zip(output, gts)):
-            #     if g < 2:
-            #         rel_loss += REL_LOSS_W*rel_criterion(o.unsqueeze(0), torch.tensor(g).view(-1).cuda())
-            #     else:
-            #         rel_loss += rel_criterion(o.unsqueeze(0), torch.tensor(g).view(-1).cuda())
+            # rel_loss += rel_criterion(output, torch.tensor(gts).view(-1).cuda())
+            REL_LOSS_W = 9
+            for i, (o, g) in enumerate(zip(output, gts)):
+                if g < 2:
+                    rel_loss += REL_LOSS_W*rel_criterion(o.unsqueeze(0), torch.tensor(g).view(-1).cuda())
+                else:
+                    rel_loss += rel_criterion(o.unsqueeze(0), torch.tensor(g).view(-1).cuda())
 
 
 
@@ -323,48 +323,52 @@ class VMRN_MR(GeneralizedRCNN):
                 union_idx = 0
                 # acc, acc_total = 0, 0
                 for B in range(len(batched_inputs)):
-                    # rel_mat = batched_inputs[B]['rel_mat']
+                    rel_mat = batched_inputs[B]['rel_mat']
                     pred_rel_mat = torch.zeros(len(batched_inputs[B]['rel_mat']), len(batched_inputs[B]['rel_mat']))
-                    diff, total = 0, 0
                     if B == 0:
                         roi_feat_batch_obj = roi_feat_obj[:num_obj]
                     else:
                         roi_feat_batch_obj = roi_feat_obj[num_obj:]
                     if len(roi_feat_batch_obj) <= 1:
                         continue
+                    obj_pair_feat = []
+                    gts = []
                     for i, feat_i in enumerate(roi_feat_batch_obj):
                         for j, feat_j in enumerate(roi_feat_batch_obj):
                             if i == j: continue
+                    
+                            opfc = []
+                            opfc.append(self.rel_layers_o1(feat_i.unsqueeze(0)).mean(3).mean(2))
+                            opfc.append(self.rel_layers_o2(feat_j.unsqueeze(0)).mean(3).mean(2))
+                            opfc.append(self.rel_layers_union(roi_feat_union[union_idx].unsqueeze(0)).mean(3).mean(2))
                             
-                            output_i = self.rel_layers_o1(feat_i.unsqueeze(0))
-                            output_j = self.rel_layers_o2(feat_j.unsqueeze(0))
-                            output_u = self.rel_layers_union(roi_feat_union[union_idx].unsqueeze(0))
                             union_idx += 1
 
-                        flatten_i = torch.flatten(output_i)
-                        flatten_j = torch.flatten(output_j)
-                        flatten_u = torch.flatten(output_u)
-                        flatten = torch.cat((flatten_i, flatten_j, flatten_u)).unsqueeze(0)
-                        output = self.rel_fc_layers(flatten)
-                        predict = torch.argmax(output, dim=1)
-                        if predict == 0:        # parent
-                            pred_rel_mat[i][j] = -1
-                        elif predict == 1:      # child
-                            pred_rel_mat[j][i] = -1
-                        elif predict == 2:
-                            pass
-                        # gt = self.rel_gt(rel_mat[i][j], rel_mat[j][i])
-                        
-                    #     diff += math.pow(output - gt, 2)
-                    #     total += 1
+                            obj_pair_feat.append(torch.cat(opfc, 1))
+                            gt = self.rel_gt(rel_mat[i][j], rel_mat[j][i])
+                            gts.append(gt)
+                    obj_pair_feat = torch.cat(obj_pair_feat, 0)
+                    output = self.rel_fc_layers(obj_pair_feat)
+                    pred = torch.argmax(output, dim=1)
+                    pred_idx = 0
+                    for i, feat_i in enumerate(roi_feat_batch_obj):
+                        for j, feat_j in enumerate(roi_feat_batch_obj):
+                            if i == j: continue
+                            if pred[pred_idx] == 0:     # i is parent of j
+                                pred_rel_mat[i][j] = -1
+                            elif pred[pred_idx] == 1:   # i is child of j
+                                pred_rel_mat[i][j] = 1
+                    print('@@ Pred Rel Mat \t\t vs \t\t GT Rel Mat')
+                    gts_mask = []
+                    for i in range(len(pred_rel_mat)):
+                        print(pred_rel_mat[i], '\t\t\t', rel_mat[i])
+                        gts_mask.append(gts[i] < 2)
+                    print()
                     
-                    # if total:
-                    #     acc += (diff / total)
-                    #     acc_total += 1
 
-            else:
-                detected_instances = [x.to(self.device) for x in detected_instances]
-                results = self.roi_heads.forward_with_given_boxes(features, detected_instances)
+                else:
+                    detected_instances = [x.to(self.device) for x in detected_instances]
+                    results = self.roi_heads.forward_with_given_boxes(features, detected_instances)
 
             if do_postprocess:
                 assert not torch.jit.is_scripting(), "Scripting is not supported for postprocess."
